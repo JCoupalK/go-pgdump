@@ -12,7 +12,7 @@ import (
 	"log"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
-	"yourproject/pgdump" // Adjust the import path according to your project structure
+ 	"github.com/JCoupalK/go-pgdump" // Adjust the import path according to your project structure
 )
 
 func main() {
