@@ -67,3 +67,13 @@ func getTableData(db *sql.DB, tableName string) (string, error) {
 
 	return strings.Join(insertStatements, "\n"), nil
 }
+
+func getServerVersion(db *sql.DB) (string, error) {
+    var version string
+    query := "SELECT version();"
+    row := db.QueryRow(query)
+    if err := row.Scan(&version); err != nil {
+        return "", err
+    }
+    return version, nil
+}

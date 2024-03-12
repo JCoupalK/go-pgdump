@@ -2,7 +2,9 @@ package pgdump
 
 import (
 	"database/sql"
-	"fmt"
+	"log"
+	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -15,19 +17,58 @@ func NewDumper(connectionString string) *Dumper {
 	return &Dumper{ConnectionString: connectionString}
 }
 
-func (d *Dumper) DumpDatabase(schemaFile, dataFile string) error {
+func (d *Dumper) DumpDatabase(outputFile string) error {
 	db, err := sql.Open("postgres", d.ConnectionString)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	if err := d.dumpSchema(db, schemaFile); err != nil {
-		return fmt.Errorf("error dumping schema: %v", err)
+	file, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Template variables
+	serverVersion, err := getServerVersion(db)
+	if err != nil {
+		log.Fatalf("Failed to get PostgreSQL server version: %v", err)
 	}
 
-	if err := d.dumpData(db, dataFile); err != nil {
-		return fmt.Errorf("error dumping data: %v", err)
+	info := DumpInfo{
+		DumpVersion:   "1.0.0",
+		ServerVersion: serverVersion,
+		CompleteTime:  time.Now().Format(time.RFC1123),
+	}
+
+	if err := writeHeader(file, info); err != nil {
+		return err
+	}
+	// Dump schema: Iterate through each table to write CREATE TABLE statements
+	tables, err := getTables(db)
+	if err != nil {
+		return err
+	}
+	for _, table := range tables {
+		createStmt, err := getCreateTableStatement(db, table)
+		if err != nil {
+			return err
+		}
+		file.WriteString(createStmt + "\n\n")
+	}
+
+	// Dump data: Iterate through each table to write data using COPY
+	for _, table := range tables {
+		copyStmt, err := getTableDataCopyFormat(db, table)
+		if err != nil {
+			return err
+		}
+		file.WriteString(copyStmt + "\n\n")
+	}
+
+	if err := writeFooter(file, info); err != nil {
+		return err
 	}
 
 	return nil
