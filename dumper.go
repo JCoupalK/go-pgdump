@@ -95,47 +95,50 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 }
 
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
-	var sequencesSQL strings.Builder
+    var sequencesSQL strings.Builder
 
-	query := `
-SELECT
-    'CREATE SEQUENCE ' || sequence_schema || '.' || sequence_name ||
-    ' INCREMENT BY ' || increment_by ||
-    ' MINVALUE ' || min_value ||
-    ' MAXVALUE ' || max_value ||
-    ' START WITH ' || start_value ||
-    (CASE WHEN is_cycled = 'YES' THEN ' CYCLE' ELSE '' END) || ';' AS sequence_creation,
-    'ALTER SEQUENCE ' || sequence_schema || '.' || sequence_name ||
-    ' OWNED BY ' || t.relname || '.' || a.attname || ';' AS sequence_ownership,
-    'ALTER TABLE ' || t.relname ||
-    ' ALTER COLUMN ' || a.attname || 
-    ' SET DEFAULT ' || 'nextval(''' || sequence_schema || '.' || sequence_name || '''::regclass);' AS column_default
-FROM pg_sequences
-JOIN pg_class t ON t.relname = replace(sequence_name, '_id_seq', '')
-JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = replace(sequence_name, '_id_seq', 'id')
-WHERE sequence_schema = 'public' AND t.relname = $1;
+    query := `
+SELECT n.nspname AS schema_name,
+       c.relname AS sequence_name,
+       t.relname AS table_name,
+       a.attname AS column_name,
+       'CREATE SEQUENCE ' || text(n.nspname) || '.' || text(c.relname) ||
+       ' INCREMENT BY ' || text(s.seqincrement) ||
+       ' MINVALUE ' || text(s.seqmin) ||
+       ' MAXVALUE ' || text(s.seqmax) ||
+       ' START WITH ' || text(s.seqstart) ||
+       ' CACHE ' || text(s.seqcache) || ';' AS sequence_creation,
+       'ALTER SEQUENCE ' || text(n.nspname) || '.' || text(c.relname) ||
+       ' OWNED BY ' || text(t.relname) || '.' || text(a.attname) || ';' AS sequence_ownership
+FROM pg_class c
+JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a'
+JOIN pg_attrdef ad ON ad.oid = d.refobjid
+JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = ad.adnum
+JOIN pg_class t ON t.oid = d.refobjid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_sequence s ON s.seqrelid = c.oid
+WHERE t.relname = $1 AND n.nspname = 'public';
 `
+    rows, err := db.Query(query, tableName)
+    if err != nil {
+        return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
+    }
+    defer rows.Close()
 
-	rows, err := db.Query(query, tableName)
-	if err != nil {
-		return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
-	}
-	defer rows.Close()
+    for rows.Next() {
+        var schemaName, sequenceName, tableName, columnName, sequenceCreation, sequenceOwnership string
+        if err := rows.Scan(&schemaName, &sequenceName, &tableName, &columnName, &sequenceCreation, &sequenceOwnership); err != nil {
+            return "", fmt.Errorf("error scanning sequence information: %v", err)
+        }
 
-	for rows.Next() {
-		var sequenceCreation, sequenceOwnership, columnDefault string
-		if err := rows.Scan(&sequenceCreation, &sequenceOwnership, &columnDefault); err != nil {
-			return "", fmt.Errorf("error scanning sequence information: %v", err)
-		}
+        sequencesSQL.WriteString(sequenceCreation + "\n" + sequenceOwnership + "\n")
+    }
 
-		sequencesSQL.WriteString(sequenceCreation + "\n" + sequenceOwnership + "\n" + columnDefault + "\n")
-	}
+    if err := rows.Err(); err != nil {
+        return "", fmt.Errorf("error iterating over sequences: %v", err)
+    }
 
-	if err := rows.Err(); err != nil {
-		return "", fmt.Errorf("error iterating over sequences: %v", err)
-	}
-
-	return sequencesSQL.String(), nil
+    return sequencesSQL.String(), nil
 }
 
 func scriptPrimaryKeys(db *sql.DB, tableName string) (string, error) {
