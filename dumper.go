@@ -98,52 +98,61 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 }
 
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
-	var sequencesSQL strings.Builder
+    var sequencesSQL strings.Builder
 
-	query := `
-SELECT n.nspname AS sequence_schema,
-       s.relname AS sequence_name,
-       seq.sequence_schema,
-       seq.sequence_name,
-       seq.start_value,
-       seq.minimum_value,
-       seq.maximum_value,
-       seq.increment_by,
-       a.attname AS related_column
-FROM pg_class s
-JOIN pg_depend d ON d.objid = s.oid
-JOIN pg_class t ON t.oid = d.refobjid AND t.relkind = 'r'
-JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
-JOIN pg_namespace n ON n.oid = s.relnamespace
-JOIN pg_sequences seq ON seq.sequencename = s.relname AND seq.schemaname = n.nspname
+    // Revised query to be more broadly compatible
+    query := `
+SELECT n.nspname as schema_name,
+       seq.relname as sequence_name,
+       t.relname as table_name,
+       a.attname as column_name,
+       format('CREATE SEQUENCE %I.%I INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s OWNED BY %I.%I;',
+              n.nspname, seq.relname,
+              seq_cache.seqincrement,
+              seq_cache.seqmin,
+              seq_cache.seqmax,
+              seq_cache.seqstart,
+              n.nspname, t.relname) as sequence_sql
+FROM pg_class seq
+JOIN pg_depend dep ON dep.objid = seq.oid AND dep.classid = 'pg_class'::regclass
+JOIN pg_attrdef def ON def.oid = dep.objid
+JOIN pg_attribute a ON a.attrelid = dep.refobjid AND a.attnum = dep.refobjsubid
+JOIN pg_class t ON t.oid = dep.refobjid
+JOIN pg_namespace n ON n.oid = seq.relnamespace,
+LATERAL (
+    SELECT seq.relname,
+           seq.oid,
+           coalesce(nullif(seqincrement, 0), 1) as seqincrement,
+           seqmin,
+           seqmax,
+           seqstart
+    FROM pg_sequence
+    WHERE seqrelid = seq.oid
+) as seq_cache
 WHERE t.relname = $1 AND n.nspname = 'public';
 `
+    rows, err := db.Query(query, tableName)
+    if err != nil {
+        return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
+    }
+    defer rows.Close()
 
-	rows, err := db.Query(query, tableName)
-	if err != nil {
-		return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
-	}
-	defer rows.Close()
+    for rows.Next() {
+        var (
+            schemaName, sequenceName, tableName, columnName, sequenceSQL string
+        )
+        if err := rows.Scan(&schemaName, &sequenceName, &tableName, &columnName, &sequenceSQL); err != nil {
+            return "", fmt.Errorf("error scanning sequence information: %v", err)
+        }
 
-	for rows.Next() {
-		var (
-			sequenceSchema, sequenceName, relatedColumn         string
-			startValue, minimumValue, maximumValue, incrementBy string
-		)
-		if err := rows.Scan(&sequenceSchema, &sequenceName, &sequenceSchema, &sequenceName, &startValue, &minimumValue, &maximumValue, &incrementBy, &relatedColumn); err != nil {
-			return "", fmt.Errorf("error scanning sequence information: %v", err)
-		}
+        sequencesSQL.WriteString(sequenceSQL + "\n")
+    }
 
-		// Script the CREATE SEQUENCE statement with fetched properties.
-		sequencesSQL.WriteString(fmt.Sprintf("CREATE SEQUENCE %s.%s START WITH %s INCREMENT BY %s MINVALUE %s MAXVALUE %s;\n", sequenceSchema, sequenceName, startValue, incrementBy, minimumValue, maximumValue))
-		sequencesSQL.WriteString(fmt.Sprintf("ALTER SEQUENCE %s.%s OWNED BY %s.%s;\n\n", sequenceSchema, sequenceName, tableName, relatedColumn))
-	}
+    if err := rows.Err(); err != nil {
+        return "", fmt.Errorf("error iterating over sequences: %v", err)
+    }
 
-	if err := rows.Err(); err != nil {
-		return "", fmt.Errorf("error iterating over sequences: %v", err)
-	}
-
-	return sequencesSQL.String(), nil
+    return sequencesSQL.String(), nil
 }
 
 func scriptPrimaryKeys(db *sql.DB, tableName string) (string, error) {
