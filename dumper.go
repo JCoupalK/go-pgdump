@@ -94,18 +94,20 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
 	var sequencesSQL strings.Builder
 
+	// Query to identify sequences linked to the table's columns and fetch sequence definitions
 	query := `
-SELECT 
-    n.nspname AS schema_name, 
-    c.relname AS sequence_name, 
-    pg_get_expr(d.adbin, d.adrelid) AS column_default_expression,
-    a.attname AS column_name
+SELECT 'CREATE SEQUENCE ' || n.nspname || '.' || c.relname || ';' as seq_creation,
+       pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(t.relname), quote_ident(a.attname)) as seq_owned,
+       'ALTER TABLE ' || quote_ident(n.nspname) || '.' || quote_ident(t.relname) ||
+       ' ALTER COLUMN ' || quote_ident(a.attname) ||
+       ' SET DEFAULT nextval(''' || n.nspname || '.' || c.relname || '''::regclass);' as col_default
 FROM pg_class c
-JOIN pg_depend dep ON dep.objid = c.oid AND dep.deptype = 'a'
-JOIN pg_attrdef d ON d.oid = dep.objid
-JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'S' AND dep.refobjid = (SELECT oid FROM pg_class WHERE relname = $1) AND n.nspname = 'public';
+JOIN pg_namespace n ON c.relnamespace = n.oid
+JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a' AND d.classid = 'pg_class'::regclass
+JOIN pg_attrdef ad ON ad.adrelid = d.refobjid AND ad.adnum = d.refobjsubid
+JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+JOIN pg_class t ON t.oid = d.refobjid AND t.relkind = 'r'
+WHERE c.relkind = 'S' AND t.relname = $1 AND n.nspname = 'public';
 `
 
 	rows, err := db.Query(query, tableName)
@@ -115,16 +117,14 @@ WHERE c.relkind = 'S' AND dep.refobjid = (SELECT oid FROM pg_class WHERE relname
 	defer rows.Close()
 
 	for rows.Next() {
-		var schemaName, sequenceName, columnDefaultExpression, columnName string
-		if err := rows.Scan(&schemaName, &sequenceName, &columnDefaultExpression, &columnName); err != nil {
+		var seqCreation, seqOwned, colDefault string
+		if err := rows.Scan(&seqCreation, &seqOwned, &colDefault); err != nil {
 			return "", fmt.Errorf("error scanning sequence information: %v", err)
 		}
 
-		sequenceSQL := fmt.Sprintf("CREATE SEQUENCE %s.%s;\n", schemaName, sequenceName)
-		ownedBySQL := fmt.Sprintf("ALTER SEQUENCE %s.%s OWNED BY %s.%s;\n", schemaName, sequenceName, tableName, columnName)
-		defaultSQL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;\n", tableName, columnName, columnDefaultExpression)
-
-		sequencesSQL.WriteString(sequenceSQL + ownedBySQL + defaultSQL)
+		// Here we directly use the sequence creation script.
+		// The seqOwned might not be necessary if we're focusing on creation and default value setting.
+		sequencesSQL.WriteString(seqCreation + "\n" + colDefault + "\n")
 	}
 
 	if err := rows.Err(); err != nil {
