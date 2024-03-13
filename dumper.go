@@ -100,29 +100,25 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
 	var sequencesSQL strings.Builder
 
-	// Query to find sequences associated with a table's columns
 	query := `
 SELECT n.nspname AS sequence_schema,
-       seq.relname AS sequence_name,
-       seq_att.attname AS column_name,
-       format_type(seq_typ.typnamespace, seq_typ.typtypmod) AS data_type,
-       seq_start.start_value AS start_value,
-       seq_inc.increment AS increment_by,
-       seq_min.minimum_value AS min_value,
-       seq_max.maximum_value AS max_value
-FROM pg_class tbl
-JOIN pg_namespace n ON n.oid = tbl.relnamespace
-JOIN pg_depend dep ON dep.refobjid = tbl.oid AND dep.deptype = 'a'
-JOIN pg_class seq ON seq.oid = dep.objid AND seq.relkind = 'S'
-JOIN pg_attribute seq_att ON seq_att.attrelid = seq.oid AND seq_att.attnum = -1
-JOIN pg_attrdef ad ON ad.adrelid = dep.refobjid AND ad.adnum = dep.refobjsubid
-JOIN pg_type seq_typ ON seq_typ.oid = seq_att.atttypid,
-LATERAL (SELECT pg_get_expr(ad.adbin, ad.adrelid) AS start_value) seq_start,
-LATERAL (SELECT increment_by FROM pg_sequences WHERE sequencename = seq.relname) seq_inc,
-LATERAL (SELECT min_value FROM pg_sequences WHERE sequencename = seq.relname) seq_min,
-LATERAL (SELECT max_value FROM pg_sequences WHERE sequencename = seq.relname) seq_max
-WHERE tbl.relname = $1 AND n.nspname = 'public';
+       s.relname AS sequence_name,
+       seq.sequence_schema,
+       seq.sequence_name,
+       seq.start_value,
+       seq.minimum_value,
+       seq.maximum_value,
+       seq.increment_by,
+       a.attname AS related_column
+FROM pg_class s
+JOIN pg_depend d ON d.objid = s.oid
+JOIN pg_class t ON t.oid = d.refobjid AND t.relkind = 'r'
+JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+JOIN pg_namespace n ON n.oid = s.relnamespace
+JOIN pg_sequences seq ON seq.sequencename = s.relname AND seq.schemaname = n.nspname
+WHERE t.relname = $1 AND n.nspname = 'public';
 `
+
 	rows, err := db.Query(query, tableName)
 	if err != nil {
 		return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
@@ -131,19 +127,16 @@ WHERE tbl.relname = $1 AND n.nspname = 'public';
 
 	for rows.Next() {
 		var (
-			sequenceSchema, sequenceName, columnName, dataType string
-			startValue, incrementBy, minValue, maxValue        int64
+			sequenceSchema, sequenceName, relatedColumn         string
+			startValue, minimumValue, maximumValue, incrementBy string
 		)
-		if err := rows.Scan(&sequenceSchema, &sequenceName, &columnName, &dataType, &startValue, &incrementBy, &minValue, &maxValue); err != nil {
+		if err := rows.Scan(&sequenceSchema, &sequenceName, &sequenceSchema, &sequenceName, &startValue, &minimumValue, &maximumValue, &incrementBy, &relatedColumn); err != nil {
 			return "", fmt.Errorf("error scanning sequence information: %v", err)
 		}
 
-		sequenceSQL := fmt.Sprintf("CREATE SEQUENCE %s.%s AS %s START WITH %d INCREMENT BY %d MINVALUE %d MAXVALUE %d;\n",
-			sequenceSchema, sequenceName, dataType, startValue, incrementBy, minValue, maxValue)
-		sequenceSQL += fmt.Sprintf("ALTER SEQUENCE %s.%s OWNED BY %s.%s;\n",
-			sequenceSchema, sequenceName, tableName, columnName)
-
-		sequencesSQL.WriteString(sequenceSQL)
+		// Script the CREATE SEQUENCE statement with fetched properties.
+		sequencesSQL.WriteString(fmt.Sprintf("CREATE SEQUENCE %s.%s START WITH %s INCREMENT BY %s MINVALUE %s MAXVALUE %s;\n", sequenceSchema, sequenceName, startValue, incrementBy, minimumValue, maximumValue))
+		sequencesSQL.WriteString(fmt.Sprintf("ALTER SEQUENCE %s.%s OWNED BY %s.%s;\n\n", sequenceSchema, sequenceName, tableName, relatedColumn))
 	}
 
 	if err := rows.Err(); err != nil {
