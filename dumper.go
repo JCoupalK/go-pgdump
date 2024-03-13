@@ -32,10 +32,7 @@ func (d *Dumper) DumpDatabase(outputFile string) error {
 	defer file.Close()
 
 	// Template variables
-	serverVersion, err := getServerVersion(db)
-	if err != nil {
-		fmt.Printf("failed to get PostgreSQL server version: %v", err)
-	}
+	serverVersion := getServerVersion(db)
 
 	info := DumpInfo{
 		DumpVersion:   "1.0.2",
@@ -98,61 +95,47 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 }
 
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
-    var sequencesSQL strings.Builder
+	var sequencesSQL strings.Builder
 
-    // Revised query to be more broadly compatible
-    query := `
-SELECT n.nspname as schema_name,
-       seq.relname as sequence_name,
-       t.relname as table_name,
-       a.attname as column_name,
-       format('CREATE SEQUENCE %I.%I INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s OWNED BY %I.%I;',
-              n.nspname, seq.relname,
-              seq_cache.seqincrement,
-              seq_cache.seqmin,
-              seq_cache.seqmax,
-              seq_cache.seqstart,
-              n.nspname, t.relname) as sequence_sql
-FROM pg_class seq
-JOIN pg_depend dep ON dep.objid = seq.oid AND dep.classid = 'pg_class'::regclass
-JOIN pg_attrdef def ON def.oid = dep.objid
-JOIN pg_attribute a ON a.attrelid = dep.refobjid AND a.attnum = dep.refobjsubid
-JOIN pg_class t ON t.oid = dep.refobjid
-JOIN pg_namespace n ON n.oid = seq.relnamespace,
-LATERAL (
-    SELECT seq.relname,
-           seq.oid,
-           coalesce(nullif(seqincrement, 0), 1) as seqincrement,
-           seqmin,
-           seqmax,
-           seqstart
-    FROM pg_sequence
-    WHERE seqrelid = seq.oid
-) as seq_cache
-WHERE t.relname = $1 AND n.nspname = 'public';
+	query := `
+SELECT
+    'CREATE SEQUENCE ' || sequence_schema || '.' || sequence_name ||
+    ' INCREMENT BY ' || increment_by ||
+    ' MINVALUE ' || min_value ||
+    ' MAXVALUE ' || max_value ||
+    ' START WITH ' || start_value ||
+    (CASE WHEN is_cycled = 'YES' THEN ' CYCLE' ELSE '' END) || ';' AS sequence_creation,
+    'ALTER SEQUENCE ' || sequence_schema || '.' || sequence_name ||
+    ' OWNED BY ' || t.relname || '.' || a.attname || ';' AS sequence_ownership,
+    'ALTER TABLE ' || t.relname ||
+    ' ALTER COLUMN ' || a.attname || 
+    ' SET DEFAULT ' || 'nextval(''' || sequence_schema || '.' || sequence_name || '''::regclass);' AS column_default
+FROM pg_sequences
+JOIN pg_class t ON t.relname = replace(sequence_name, '_id_seq', '')
+JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = replace(sequence_name, '_id_seq', 'id')
+WHERE sequence_schema = 'public' AND t.relname = $1;
 `
-    rows, err := db.Query(query, tableName)
-    if err != nil {
-        return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
-    }
-    defer rows.Close()
 
-    for rows.Next() {
-        var (
-            schemaName, sequenceName, tableName, columnName, sequenceSQL string
-        )
-        if err := rows.Scan(&schemaName, &sequenceName, &tableName, &columnName, &sequenceSQL); err != nil {
-            return "", fmt.Errorf("error scanning sequence information: %v", err)
-        }
+	rows, err := db.Query(query, tableName)
+	if err != nil {
+		return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
+	}
+	defer rows.Close()
 
-        sequencesSQL.WriteString(sequenceSQL + "\n")
-    }
+	for rows.Next() {
+		var sequenceCreation, sequenceOwnership, columnDefault string
+		if err := rows.Scan(&sequenceCreation, &sequenceOwnership, &columnDefault); err != nil {
+			return "", fmt.Errorf("error scanning sequence information: %v", err)
+		}
 
-    if err := rows.Err(); err != nil {
-        return "", fmt.Errorf("error iterating over sequences: %v", err)
-    }
+		sequencesSQL.WriteString(sequenceCreation + "\n" + sequenceOwnership + "\n" + columnDefault + "\n")
+	}
 
-    return sequencesSQL.String(), nil
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("error iterating over sequences: %v", err)
+	}
+
+	return sequencesSQL.String(), nil
 }
 
 func scriptPrimaryKeys(db *sql.DB, tableName string) (string, error) {
