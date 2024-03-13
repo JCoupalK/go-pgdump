@@ -14,8 +14,8 @@ type DumpInfo struct {
 func writeHeader(file *os.File, info DumpInfo) error {
     const headerTemplate = `-- Go PostgreSQL Dump {{ .DumpVersion }}
 --
--- ------------------------------------------------------
--- Server version    {{ .ServerVersion }}
+-- Server version:
+--	 {{ .ServerVersion }}
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;

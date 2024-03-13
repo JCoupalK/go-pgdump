@@ -69,11 +69,11 @@ func getTableData(db *sql.DB, tableName string) (string, error) {
 }
 
 func getServerVersion(db *sql.DB) (string, error) {
-    var version string
-    query := "SELECT version();"
-    row := db.QueryRow(query)
-    if err := row.Scan(&version); err != nil {
-        return "", err
-    }
-    return version, nil
+	var version string
+	query := "SELECT version();"
+	row := db.QueryRow(query)
+	if err := row.Scan(&version); err != nil {
+		return "Unknown", err
+	}
+	return version, nil
 }
