@@ -3,34 +3,57 @@ package pgdump
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"strings"
 )
 
-func (d *Dumper) dumpData(db *sql.DB, filePath string) error {
-	tables, err := getTables(db)
+// returns a slice of table names in the public schema.
+func getTables(db *sql.DB) ([]string, error) {
+	query := "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+	rows, err := db.Query(query)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	defer rows.Close()
 
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	for _, table := range tables {
-		dataStmt, err := getTableData(db, table)
-		if err != nil {
-			return err
+	var tables []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return nil, err
 		}
-		file.WriteString(dataStmt + "\n\n")
+		tables = append(tables, tableName)
 	}
-
-	return nil
+	return tables, nil
 }
 
-func getTableData(db *sql.DB, tableName string) (string, error) {
+// generates the SQL for creating a table, including column definitions.
+func getCreateTableStatement(db *sql.DB, tableName string) (string, error) {
+	query := fmt.Sprintf("SELECT column_name, data_type, character_maximum_length FROM information_schema.columns WHERE table_name = '%s'", tableName)
+	rows, err := db.Query(query)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	var columns []string
+	for rows.Next() {
+		var columnName, dataType string
+		var charMaxLength *int
+		if err := rows.Scan(&columnName, &dataType, &charMaxLength); err != nil {
+			return "", err
+		}
+		columnDef := fmt.Sprintf("%s %s", columnName, dataType)
+		if charMaxLength != nil {
+			columnDef += fmt.Sprintf("(%d)", *charMaxLength)
+		}
+		columns = append(columns, columnDef)
+	}
+
+	return fmt.Sprintf("CREATE TABLE %s (\n    %s\n);", tableName, strings.Join(columns, ",\n    ")), nil
+}
+
+// generates the COPY command to import data for a table.
+func getTableDataCopyFormat(db *sql.DB, tableName string) (string, error) {
 	query := fmt.Sprintf("SELECT * FROM %s", tableName)
 	rows, err := db.Query(query)
 	if err != nil {
@@ -42,38 +65,26 @@ func getTableData(db *sql.DB, tableName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	values := make([]interface{}, len(columns))
-	valuePtrs := make([]interface{}, len(columns))
+	values := make([]sql.RawBytes, len(columns))
+	scanArgs := make([]interface{}, len(values))
 	for i := range values {
-		valuePtrs[i] = &values[i]
+		scanArgs[i] = &values[i]
 	}
 
-	var insertStatements []string
+	var output strings.Builder
+	output.WriteString(fmt.Sprintf("COPY %s (%s) FROM stdin;\n", tableName, strings.Join(columns, ", ")))
 	for rows.Next() {
-		rows.Scan(valuePtrs...)
+		err := rows.Scan(scanArgs...)
+		if err != nil {
+			return "", err
+		}
 		var valueStrings []string
 		for _, value := range values {
-			switch v := value.(type) {
-			case nil:
-				valueStrings = append(valueStrings, "NULL")
-			case []byte:
-				valueStrings = append(valueStrings, fmt.Sprintf("'%s'", string(v)))
-			default:
-				valueStrings = append(valueStrings, fmt.Sprintf("'%v'", v))
-			}
+			valueStrings = append(valueStrings, string(value))
 		}
-		insertStatements = append(insertStatements, fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);", tableName, strings.Join(columns, ", "), strings.Join(valueStrings, ", ")))
+		output.WriteString(strings.Join(valueStrings, "\t") + "\n")
 	}
+	output.WriteString("\\.\n")
 
-	return strings.Join(insertStatements, "\n"), nil
-}
-
-func getServerVersion(db *sql.DB) string {
-	var version string
-	query := "SELECT version();"
-	row := db.QueryRow(query)
-	if err := row.Scan(&version); err != nil {
-		return "Unknown"
-	}
-	return version
+	return output.String(), nil
 }

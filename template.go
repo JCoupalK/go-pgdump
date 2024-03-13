@@ -1,6 +1,7 @@
 package pgdump
 
 import (
+	"database/sql"
 	"os"
 	"text/template"
 )
@@ -11,8 +12,18 @@ type DumpInfo struct {
 	CompleteTime  string
 }
 
+func getServerVersion(db *sql.DB) string {
+	var version string
+	query := "SELECT version();"
+	row := db.QueryRow(query)
+	if err := row.Scan(&version); err != nil {
+		return "Unknown"
+	}
+	return version
+}
+
 func writeHeader(file *os.File, info DumpInfo) error {
-    const headerTemplate = `-- Go PostgreSQL Dump {{ .DumpVersion }}
+	const headerTemplate = `-- Go PostgreSQL Dump {{ .DumpVersion }}
 --
 -- Server version:
 --	 {{ .ServerVersion }}
@@ -32,20 +43,20 @@ SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 `
-    tmpl, err := template.New("header").Parse(headerTemplate)
-    if err != nil {
-        return err
-    }
-    return tmpl.Execute(file, info)
+	tmpl, err := template.New("header").Parse(headerTemplate)
+	if err != nil {
+		return err
+	}
+	return tmpl.Execute(file, info)
 }
 
 func writeFooter(file *os.File, info DumpInfo) error {
-    const footerTemplate = `--
+	const footerTemplate = `--
 -- Dump completed on {{ .CompleteTime }}
 --`
-    tmpl, err := template.New("footer").Parse(footerTemplate)
-    if err != nil {
-        return err
-    }
-    return tmpl.Execute(file, info)
+	tmpl, err := template.New("footer").Parse(footerTemplate)
+	if err != nil {
+		return err
+	}
+	return tmpl.Execute(file, info)
 }
