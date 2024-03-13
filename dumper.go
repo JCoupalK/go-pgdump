@@ -94,27 +94,18 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
 	var sequencesSQL strings.Builder
 
-	// Query to find sequences associated with auto-increment columns in the specified table.
 	query := `
-SELECT
-    'CREATE SEQUENCE ' || n.nspname || '.' || c.relname ||
-    ' INCREMENT BY ' || seq.increment_by ||
-    ' MINVALUE ' || seq.min_value ||
-    ' MAXVALUE ' || seq.max_value ||
-    ' START ' || seq.start_value ||
-    ' CACHE ' || seq.cache_size || 
-    CASE WHEN seq.cycle_option = 'YES' THEN ' CYCLE' ELSE '' END || ';' AS sequence_definition,
-    pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(t.relname), quote_ident(a.attname)) AS owned_by,
-    'ALTER TABLE ' || quote_ident(n.nspname) || '.' || quote_ident(t.relname) || 
-    ' ALTER COLUMN ' || quote_ident(a.attname) || 
-    ' SET DEFAULT nextval(''' || n.nspname || '.' || c.relname || '''::regclass);' AS default_value
+SELECT 
+    n.nspname AS schema_name, 
+    c.relname AS sequence_name, 
+    pg_get_expr(d.adbin, d.adrelid) AS column_default_expression,
+    a.attname AS column_name
 FROM pg_class c
+JOIN pg_depend dep ON dep.objid = c.oid AND dep.deptype = 'a'
+JOIN pg_attrdef d ON d.oid = dep.objid
+JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
 JOIN pg_namespace n ON n.oid = c.relnamespace
-JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a'
-JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
-JOIN pg_class t ON t.oid = d.refobjid
-JOIN information_schema.sequences seq ON seq.sequence_name = c.relname AND seq.sequence_schema = n.nspname
-WHERE t.relname = $1 AND n.nspname = 'public';
+WHERE c.relkind = 'S' AND dep.refobjid = (SELECT oid FROM pg_class WHERE relname = $1) AND n.nspname = 'public';
 `
 
 	rows, err := db.Query(query, tableName)
@@ -124,15 +115,16 @@ WHERE t.relname = $1 AND n.nspname = 'public';
 	defer rows.Close()
 
 	for rows.Next() {
-		var sequenceDefinition, ownedBy, defaultValue string
-		if err := rows.Scan(&sequenceDefinition, &ownedBy, &defaultValue); err != nil {
+		var schemaName, sequenceName, columnDefaultExpression, columnName string
+		if err := rows.Scan(&schemaName, &sequenceName, &columnDefaultExpression, &columnName); err != nil {
 			return "", fmt.Errorf("error scanning sequence information: %v", err)
 		}
 
-		sequencesSQL.WriteString(sequenceDefinition + "\n")
-		if ownedBy != "" { // Only add ownership and default value statements if the sequence is owned.
-			sequencesSQL.WriteString(ownedBy + "\n" + defaultValue + "\n")
-		}
+		sequenceSQL := fmt.Sprintf("CREATE SEQUENCE %s.%s;\n", schemaName, sequenceName)
+		ownedBySQL := fmt.Sprintf("ALTER SEQUENCE %s.%s OWNED BY %s.%s;\n", schemaName, sequenceName, tableName, columnName)
+		defaultSQL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;\n", tableName, columnName, columnDefaultExpression)
+
+		sequencesSQL.WriteString(sequenceSQL + ownedBySQL + defaultSQL)
 	}
 
 	if err := rows.Err(); err != nil {
