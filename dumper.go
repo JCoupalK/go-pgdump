@@ -95,28 +95,27 @@ func scriptSequences(db *sql.DB, tableName string) (string, error) {
 	var sequencesSQL strings.Builder
 
 	query := `
-SELECT 'CREATE SEQUENCE ' || n.nspname || '.' || c.relname || 
-       ' INCREMENT BY ' || s.increment_by || 
-       ' MINVALUE ' || s.min_value || 
-       ' MAXVALUE ' || s.max_value || 
-       ' START WITH ' || s.start_value || 
-       ' CACHE ' || s.cache_value || 
-       CASE WHEN s.cycle_option = 'YES' THEN ' CYCLE' ELSE '' END || ';' AS sequence_definition,
-       'ALTER SEQUENCE ' || n.nspname || '.' || c.relname ||
-       ' OWNED BY ' || t.relname || '.' || a.attname || ';' AS ownership,
-       'ALTER TABLE ' || t.relname || 
-       ' ALTER COLUMN ' || a.attname || 
-       ' SET DEFAULT nextval(''' || n.nspname || '.' || c.relname || '''::regclass);' AS default_value
+SELECT 
+    n.nspname AS schema_name, 
+    c.relname AS sequence_name, 
+    t.relname AS table_name, 
+    a.attname AS column_name, 
+    format('CREATE SEQUENCE %I.%I INCREMENT %s MINVALUE %s MAXVALUE %s START %s;',
+        n.nspname, c.relname,
+        seq.increment_by,
+        seq.min_value,
+        seq.max_value,
+        seq.start_value) AS sequence_creation,
+    format('ALTER SEQUENCE %I.%I OWNED BY %I.%I;', n.nspname, c.relname, t.relname, a.attname) AS ownership,
+    format('ALTER TABLE %I.%I ALTER COLUMN %I SET DEFAULT nextval(''%I.%I''::regclass);',
+        t.relname, a.attname, n.nspname, c.relname) AS default_value
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
-JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a'
+JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a' AND d.classid = 'pg_class'::regclass
+JOIN pg_attrdef ad ON ad.oid = d.refobjid
 JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
 JOIN pg_class t ON t.oid = d.refobjid
-JOIN (
-    SELECT sequence_schema, sequence_name, increment_by, min_value, max_value, start_value, cache_value, cycle_option
-    FROM information_schema.sequences
-    WHERE sequence_catalog = current_database()
-) s ON s.sequence_schema = n.nspname AND s.sequence_name = c.relname
+JOIN pg_sequence seq ON seq.seqrelid = c.oid
 WHERE t.relname = $1 AND n.nspname = 'public';
 `
 
@@ -127,12 +126,12 @@ WHERE t.relname = $1 AND n.nspname = 'public';
 	defer rows.Close()
 
 	for rows.Next() {
-		var sequenceDefinition, ownership, defaultValue string
-		if err := rows.Scan(&sequenceDefinition, &ownership, &defaultValue); err != nil {
+		var sequenceCreation, ownership, defaultValue string
+		if err := rows.Scan(&sequenceCreation, &ownership, &defaultValue); err != nil {
 			return "", fmt.Errorf("error scanning sequence information: %v", err)
 		}
 
-		sequencesSQL.WriteString(sequenceDefinition + "\n" + ownership + "\n" + defaultValue + "\n")
+		sequencesSQL.WriteString(sequenceCreation + "\n" + ownership + "\n" + defaultValue + "\n")
 	}
 
 	if err := rows.Err(); err != nil {
