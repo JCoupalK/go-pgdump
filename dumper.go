@@ -37,9 +37,9 @@ func (d *Dumper) DumpDatabase(outputFile string) error {
 	}
 
 	info := DumpInfo{
-		DumpVersion:   "1.0.0",
+		DumpVersion:   "1.0.1",
 		ServerVersion: serverVersion,
-		CompleteTime:  time.Now().Format(time.RFC1123),
+		CompleteTime:  time.Now().Format("2006-01-02 15:04:05 -0700 MST"),
 	}
 
 	if err := writeHeader(file, info); err != nil {
