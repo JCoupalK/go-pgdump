@@ -94,29 +94,32 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
 	var sequencesSQL strings.Builder
 
+	// Adjusted query to leverage pg_sequences for PostgreSQL 16.1
 	query := `
 SELECT 
-    n.nspname AS schema_name, 
-    c.relname AS sequence_name, 
-    t.relname AS table_name, 
-    a.attname AS column_name, 
-    format('CREATE SEQUENCE %I.%I INCREMENT %s MINVALUE %s MAXVALUE %s START %s;',
-        n.nspname, c.relname,
-        seq.increment_by,
-        seq.min_value,
-        seq.max_value,
-        seq.start_value) AS sequence_creation,
-    format('ALTER SEQUENCE %I.%I OWNED BY %I.%I;', n.nspname, c.relname, t.relname, a.attname) AS ownership,
-    format('ALTER TABLE %I.%I ALTER COLUMN %I SET DEFAULT nextval(''%I.%I''::regclass);',
-        t.relname, a.attname, n.nspname, c.relname) AS default_value
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a' AND d.classid = 'pg_class'::regclass
-JOIN pg_attrdef ad ON ad.oid = d.refobjid
-JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
-JOIN pg_class t ON t.oid = d.refobjid
-JOIN pg_sequence seq ON seq.seqrelid = c.oid
-WHERE t.relname = $1 AND n.nspname = 'public';
+    format('CREATE SEQUENCE %I.%I INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s CACHE %s %s;',
+        s.schemaname, 
+        s.sequencename, 
+        s.increment_by, 
+        s.min_value, 
+        s.max_value, 
+        s.start_value, 
+        s.cache_size,
+        CASE WHEN s.cycle THEN 'CYCLE' ELSE '' END) AS sequence_creation,
+    format('ALTER SEQUENCE %I.%I OWNED BY %I.%I;', 
+        s.schemaname, 
+        s.sequencename, 
+        t.table_name, 
+        c.column_name) AS sequence_ownership,
+    format('ALTER TABLE %I ALTER COLUMN %I SET DEFAULT nextval(''%I.%I''::regclass);', 
+        t.table_name, 
+        c.column_name, 
+        s.schemaname, 
+        s.sequencename) AS column_default
+FROM pg_sequences s
+JOIN information_schema.columns c ON s.sequencename = replace(c.column_default, 'nextval(''''', '')::regclass::text', '') AND c.column_default LIKE 'nextval%'
+JOIN information_schema.tables t ON t.table_name = c.table_name
+WHERE t.table_name = $1 AND t.table_schema = 'public';
 `
 
 	rows, err := db.Query(query, tableName)
@@ -126,12 +129,12 @@ WHERE t.relname = $1 AND n.nspname = 'public';
 	defer rows.Close()
 
 	for rows.Next() {
-		var sequenceCreation, ownership, defaultValue string
-		if err := rows.Scan(&sequenceCreation, &ownership, &defaultValue); err != nil {
+		var sequenceCreation, sequenceOwnership, columnDefault string
+		if err := rows.Scan(&sequenceCreation, &sequenceOwnership, &columnDefault); err != nil {
 			return "", fmt.Errorf("error scanning sequence information: %v", err)
 		}
 
-		sequencesSQL.WriteString(sequenceCreation + "\n" + ownership + "\n" + defaultValue + "\n")
+		sequencesSQL.WriteString(sequenceCreation + "\n" + sequenceOwnership + "\n" + columnDefault + "\n")
 	}
 
 	if err := rows.Err(); err != nil {
