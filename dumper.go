@@ -94,24 +94,27 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
 	var sequencesSQL strings.Builder
 
-	// Directly fetching sequences associated with the table's columns
+	// Query to find sequences associated with auto-increment columns in the specified table.
 	query := `
-SELECT 
-    'CREATE SEQUENCE ' || sequence_schema || '.' || sequence_name ||
-    ' INCREMENT BY ' || increment_by ||
-    ' MINVALUE ' || minimum_value ||
-    ' MAXVALUE ' || maximum_value ||
-    ' START WITH ' || start_value ||
-    ' CACHE ' || cache_size || 
-    CASE cycle_option WHEN 'YES' THEN ' CYCLE' ELSE '' END || ';' as seq_def,
-    'ALTER SEQUENCE ' || sequence_schema || '.' || sequence_name ||
-    ' OWNED BY ' || table_schema || '.' || column_name || ';' as seq_owned,
-    'ALTER TABLE ' || table_schema || '.' || table_name || 
-    ' ALTER COLUMN ' || column_name || 
-    ' SET DEFAULT nextval(''' || sequence_schema || '.' || sequence_name || '''::regclass);' as column_default
-FROM information_schema.columns c
-JOIN pg_sequences ps ON c.column_default LIKE 'nextval(%' || ps.sequence_name || '%::regclass)'
-WHERE table_name = $1 AND c.table_schema = 'public';
+SELECT
+    'CREATE SEQUENCE ' || n.nspname || '.' || c.relname ||
+    ' INCREMENT BY ' || seq.increment_by ||
+    ' MINVALUE ' || seq.min_value ||
+    ' MAXVALUE ' || seq.max_value ||
+    ' START ' || seq.start_value ||
+    ' CACHE ' || seq.cache_size || 
+    CASE WHEN seq.cycle_option = 'YES' THEN ' CYCLE' ELSE '' END || ';' AS sequence_definition,
+    pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(t.relname), quote_ident(a.attname)) AS owned_by,
+    'ALTER TABLE ' || quote_ident(n.nspname) || '.' || quote_ident(t.relname) || 
+    ' ALTER COLUMN ' || quote_ident(a.attname) || 
+    ' SET DEFAULT nextval(''' || n.nspname || '.' || c.relname || '''::regclass);' AS default_value
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a'
+JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+JOIN pg_class t ON t.oid = d.refobjid
+JOIN information_schema.sequences seq ON seq.sequence_name = c.relname AND seq.sequence_schema = n.nspname
+WHERE t.relname = $1 AND n.nspname = 'public';
 `
 
 	rows, err := db.Query(query, tableName)
@@ -121,12 +124,15 @@ WHERE table_name = $1 AND c.table_schema = 'public';
 	defer rows.Close()
 
 	for rows.Next() {
-		var seqDef, seqOwned, columnDefault string
-		if err := rows.Scan(&seqDef, &seqOwned, &columnDefault); err != nil {
+		var sequenceDefinition, ownedBy, defaultValue string
+		if err := rows.Scan(&sequenceDefinition, &ownedBy, &defaultValue); err != nil {
 			return "", fmt.Errorf("error scanning sequence information: %v", err)
 		}
 
-		sequencesSQL.WriteString(seqDef + "\n" + seqOwned + "\n" + columnDefault + "\n")
+		sequencesSQL.WriteString(sequenceDefinition + "\n")
+		if ownedBy != "" { // Only add ownership and default value statements if the sequence is owned.
+			sequencesSQL.WriteString(ownedBy + "\n" + defaultValue + "\n")
+		}
 	}
 
 	if err := rows.Err(); err != nil {
