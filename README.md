@@ -2,51 +2,51 @@
 
 Create PostgreSQL dumps in Go without the pg_dump CLI as a dependancy.
 
-## Simple example
+Doesn't feature all of pg_dump features just yet (mainly around sequences) so it is still a work in progress.
+
+## Simple example using the library
 
 ```go
 package main
 
 import (
-	"database/sql"
-	"log"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
- 	"github.com/JCoupalK/go-pgdump" // Adjust the import path according to your project structure
+	"github.com/JCoupalK/go-pgdump"
 )
 
-func main() {
-	// PostgreSQL database connection string
-	// Replace the placeholder values with your actual database connection details
-	connStr := "host=your_host user=your_user password=your_password dbname=your_dbname sslmode=disable"
+func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, port int) {
+	// PostgreSQL connection string
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		hostname, port, username, password, dbname)
 
-	// Open the database connection
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatalf("Failed to open database connection: %v", err)
-	}
-	defer db.Close()
+	currentTime := time.Now()
+	dumpFilename := filepath.Join(outputDir, fmt.Sprintf("%s-%s.sql", dbname, currentTime.Format("20060102T150405")))
 
-	// Specify the directory where the dump file should be stored and the file name format
-	dumpDirectory := "./dumps"
-	fileNameFormat := "2006-01-02_15-04-05"
+	// Create a new dumper instance
+	dumper := pgdump.NewDumper(psqlInfo)
 
-	// Register the dumper with the database connection, directory, and file format
-	dumper, err := pgdump.Register(db, dumpDirectory, fileNameFormat)
-	if err != nil {
-		log.Fatalf("Failed to register dumper: %v", err)
+	if err := dumper.DumpDatabase(dumpFilename); err != nil {
+		fmt.Printf("Error dumping database: %v", err)
+		os.Remove(dumpFilename) // Cleanup on failure
+		return
 	}
 
-	// Perform the dump
-	if err := dumper.Dump(); err != nil {
-		log.Fatalf("Failed to dump database: %v", err)
-	}
+	fmt.Println("Backup successfully saved to", dumpFilename)
+}
 
-	// Close the dumper (and the file it writes to)
-	if err := dumper.Close(); err != nil {
-		log.Fatalf("Failed to close dumper: %v", err)
-	}
+func main(){
 
-	log.Println("Database dump completed successfully.")
+	username := "user"
+	password := "example"
+	hostname := "examplehost"
+	db := "dbname"
+	outputDir := "path/to/example"
+	port := 5432
+
+	BackupPostgreSQL(username, password, hostname, db, outputDir, port)
 }
 ```
