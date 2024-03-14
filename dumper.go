@@ -68,11 +68,11 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 	file.WriteString(createStmt + "\n\n")
 
 	// Script associated sequences (if any)
-	// seqStmts, err := scriptSequences(db, tableName)
-	// if err != nil {
-	// 	return fmt.Errorf("error scripting sequences for table %s: %v", tableName, err)
-	// }
-	// file.WriteString(seqStmts)
+	seqStmts, err := scriptSequences(db, tableName)
+	if err != nil {
+		return fmt.Errorf("error scripting sequences for table %s: %v", tableName, err)
+	}
+	file.WriteString(seqStmts)
 
 	// Script primary keys
 	pkStmt, err := scriptPrimaryKeys(db, tableName)
@@ -91,10 +91,48 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 	return nil
 }
 
-// TO DO
-// func scriptSequences(db *sql.DB, tableName string) (string, error) {
+func scriptSequences(db *sql.DB, tableName string) (string, error) {
+    var sequencesSQL strings.Builder
 
-// }
+    // Query to identify sequences linked to the table's columns and fetch sequence definitions
+    query := `
+SELECT 'CREATE SEQUENCE ' || n.nspname || '.' || c.relname || ';' as seq_creation,
+       pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(t.relname), quote_ident(a.attname)) as seq_owned,
+       'ALTER TABLE ' || quote_ident(n.nspname) || '.' || quote_ident(t.relname) ||
+       ' ALTER COLUMN ' || quote_ident(a.attname) ||
+       ' SET DEFAULT nextval(''' || n.nspname || '.' || c.relname || '''::regclass);' as col_default
+FROM pg_class c
+JOIN pg_namespace n ON c.relnamespace = n.oid
+JOIN pg_depend d ON d.objid = c.oid AND d.deptype = 'a' AND d.classid = 'pg_class'::regclass
+JOIN pg_attrdef ad ON ad.adrelid = d.refobjid AND ad.adnum = d.refobjsubid
+JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+JOIN pg_class t ON t.oid = d.refobjid AND t.relkind = 'r'
+WHERE c.relkind = 'S' AND t.relname = $1 AND n.nspname = 'public';
+`
+
+    rows, err := db.Query(query, tableName)
+    if err != nil {
+        return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var seqCreation, seqOwned, colDefault string
+        if err := rows.Scan(&seqCreation, &seqOwned, &colDefault); err != nil {
+            return "", fmt.Errorf("error scanning sequence information: %v", err)
+        }
+
+        // Here we directly use the sequence creation script.
+        // The seqOwned might not be necessary if we're focusing on creation and default value setting.
+        sequencesSQL.WriteString(seqCreation + "\n" + colDefault + "\n")
+    }
+
+    if err := rows.Err(); err != nil {
+        return "", fmt.Errorf("error iterating over sequences: %v", err)
+    }
+
+    return sequencesSQL.String(), nil
+}
 
 func scriptPrimaryKeys(db *sql.DB, tableName string) (string, error) {
 	var pksSQL strings.Builder
