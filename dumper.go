@@ -33,7 +33,7 @@ func (d *Dumper) DumpDatabase(outputFile string) error {
 
 	// Template variables
 	info := DumpInfo{
-		DumpVersion:   "0.1.0",
+		DumpVersion:   "0.1.1",
 		ServerVersion: getServerVersion(db),
 		CompleteTime:  time.Now().Format("2006-01-02 15:04:05 -0700 MST"),
 	}
