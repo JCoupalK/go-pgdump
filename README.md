@@ -2,6 +2,8 @@
 
 Create PostgreSQL dumps in Go without the pg_dump CLI as a dependancy.
 
+Inspired by [go-mysqldump](https://github.com/jamf/go-mysqldump) which does that but for MySQL/MariaDB.
+
 Doesn't feature all of pg_dump features just yet (mainly around sequences) so it is still a work in progress.
 
 ## Simple example using the library
