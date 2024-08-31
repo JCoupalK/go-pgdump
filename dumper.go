@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -46,12 +48,29 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 	if err != nil {
 		return err
 	}
-	for _, table := range tables {
-		if err := scriptTable(db, file, table); err != nil {
-			return err
-		}
-	}
 
+	var (
+		wg sync.WaitGroup
+		mx sync.Mutex
+	)
+
+	chunks := slices.Chunk(tables, 100)
+	for chunk := range chunks {
+		wg.Add(len(chunk))
+		for _, table := range chunk {
+			go func(table string) {
+				defer wg.Done()
+				str, err := scriptTable(db, table)
+				if err != nil {
+					return
+				}
+				mx.Lock()
+				file.WriteString(str)
+				mx.Unlock()
+			}(table)
+		}
+		wg.Wait()
+	}
 	if err := writeFooter(file, info); err != nil {
 		return err
 	}
@@ -59,36 +78,37 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 	return nil
 }
 
-func scriptTable(db *sql.DB, file *os.File, tableName string) error {
+func scriptTable(db *sql.DB, tableName string) (string, error) {
+	var buffer string
 	// Script CREATE TABLE statement
 	createStmt, err := getCreateTableStatement(db, tableName)
 	if err != nil {
-		return fmt.Errorf("error creating table statement for %s: %v", tableName, err)
+		return "", fmt.Errorf("error creating table statement for %s: %v", tableName, err)
 	}
-	file.WriteString(createStmt + "\n\n")
+	buffer = buffer + createStmt + "\n\n"
 
 	// Script associated sequences (if any)
 	seqStmts, err := scriptSequences(db, tableName)
 	if err != nil {
-		return fmt.Errorf("error scripting sequences for table %s: %v", tableName, err)
+		return "", fmt.Errorf("error scripting sequences for table %s: %v", tableName, err)
 	}
-	file.WriteString(seqStmts)
+	buffer = buffer + seqStmts + "\n\n"
 
 	// Script primary keys
 	pkStmt, err := scriptPrimaryKeys(db, tableName)
 	if err != nil {
-		return fmt.Errorf("error scripting primary keys for table %s: %v", tableName, err)
+		return "", fmt.Errorf("error scripting primary keys for table %s: %v", tableName, err)
 	}
-	file.WriteString(pkStmt)
+	buffer = buffer + pkStmt + "\n\n"
 
 	// Dump table data
 	copyStmt, err := getTableDataCopyFormat(db, tableName)
 	if err != nil {
-		return fmt.Errorf("error generating COPY statement for table %s: %v", tableName, err)
+		return "", fmt.Errorf("error generating COPY statement for table %s: %v", tableName, err)
 	}
-	file.WriteString(copyStmt + "\n\n")
+	buffer = buffer + copyStmt + "\n\n"
 
-	return nil
+	return buffer, nil
 }
 
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
