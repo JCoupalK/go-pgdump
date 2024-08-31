@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/hakaitech/go-pgdump"
+	"github.com/JCoupalK/go-pgdump"
 )
 
 var (
