@@ -12,12 +12,20 @@ Doesn't feature all of pg_dump features just yet (mainly around sequences) so it
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/JCoupalK/go-pgdump"
+	"github.com/hakaitech/go-pgdump"
+)
+
+var (
+	outputDIR = flag.String("o", "", "path to output directory")
+	suffix    = flag.String("sx", "", "suffix of tablen names for dump")
+	prefix    = flag.String("px", "", "prefix of tablen names for dump")
+	schema    = flag.String("s", "", "schema filter for dump")
 )
 
 func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, port int) {
@@ -31,22 +39,24 @@ func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, po
 	// Create a new dumper instance
 	dumper := pgdump.NewDumper(psqlInfo)
 
-	if err := dumper.DumpDatabase(dumpFilename); err != nil {
-		fmt.Printf("Error dumping database: %v", err)
-		os.Remove(dumpFilename) // Cleanup on failure
-		return
+	if err := dumper.DumpDatabase(dumpFileName, &pgdump.TableOptions{
+		TableSuffix: *suffix,
+		TablePrefix: *prefix,
+		Schema:      *schema,
+	}); err != nil {
+		log.Fatal(err)
 	}
 
 	fmt.Println("Backup successfully saved to", dumpFilename)
 }
 
 func main(){
-
+	flag.Parse()
 	username := "user"
 	password := "example"
 	hostname := "examplehost"
 	db := "dbname"
-	outputDir := "path/to/example"
+	outputDir := *outputDIR
 	port := 5432
 
 	BackupPostgreSQL(username, password, hostname, db, outputDir, port)

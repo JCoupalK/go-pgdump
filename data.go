@@ -6,9 +6,30 @@ import (
 	"strings"
 )
 
-// returns a slice of table names in the public schema.
-func getTables(db *sql.DB) ([]string, error) {
-	query := "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+// options for dumping selective tables.
+type TableOptions struct {
+	TableSuffix string
+	TablePrefix string
+	Schema      string
+}
+
+// returns a slice of table names matching options, if left blank will default to :
+//
+//	-> no prefix or suffix
+//	-> public schema
+func getTables(db *sql.DB, opts *TableOptions) ([]string, error) {
+	var (
+		query string
+	)
+	if opts != nil {
+		if opts.Schema == "" {
+			opts.Schema = "public"
+		}
+		query = fmt.Sprintf("SELECT table_name FROM information_schema.tables WHERE table_schema = '%s' AND table_name LIKE '%s'", opts.Schema, (opts.TablePrefix + "%%" + opts.TableSuffix))
+	} else {
+		query = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+	}
+
 	rows, err := db.Query(query)
 	if err != nil {
 		return nil, err
@@ -21,7 +42,11 @@ func getTables(db *sql.DB) ([]string, error) {
 		if err := rows.Scan(&tableName); err != nil {
 			return nil, err
 		}
-		tables = append(tables, tableName)
+		if opts.Schema != "public" {
+			tables = append(tables, opts.Schema+"."+tableName)
+		} else {
+			tables = append(tables, tableName)
+		}
 	}
 	return tables, nil
 }
