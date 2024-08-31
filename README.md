@@ -39,7 +39,7 @@ func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, po
 	// Create a new dumper instance
 	dumper := pgdump.NewDumper(psqlInfo)
 
-	if err := dumper.DumpDatabase(dumpFileName, &pgdump.TableOptions{
+	if err := dumper.DumpDatabase(dumpFilename, &pgdump.TableOptions{
 		TableSuffix: *suffix,
 		TablePrefix: *prefix,
 		Schema:      *schema,
