@@ -18,7 +18,7 @@ func NewDumper(connectionString string) *Dumper {
 	return &Dumper{ConnectionString: connectionString}
 }
 
-func (d *Dumper) DumpDatabase(outputFile string) error {
+func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 	db, err := sql.Open("postgres", d.ConnectionString)
 	if err != nil {
 		return err
@@ -42,7 +42,7 @@ func (d *Dumper) DumpDatabase(outputFile string) error {
 		return err
 	}
 
-	tables, err := getTables(db)
+	tables, err := getTables(db, opts)
 	if err != nil {
 		return err
 	}
@@ -92,10 +92,10 @@ func scriptTable(db *sql.DB, file *os.File, tableName string) error {
 }
 
 func scriptSequences(db *sql.DB, tableName string) (string, error) {
-    var sequencesSQL strings.Builder
+	var sequencesSQL strings.Builder
 
-    // Query to identify sequences linked to the table's columns and fetch sequence definitions
-    query := `
+	// Query to identify sequences linked to the table's columns and fetch sequence definitions
+	query := `
 SELECT 'CREATE SEQUENCE ' || n.nspname || '.' || c.relname || ';' as seq_creation,
        pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(t.relname), quote_ident(a.attname)) as seq_owned,
        'ALTER TABLE ' || quote_ident(n.nspname) || '.' || quote_ident(t.relname) ||
@@ -110,28 +110,28 @@ JOIN pg_class t ON t.oid = d.refobjid AND t.relkind = 'r'
 WHERE c.relkind = 'S' AND t.relname = $1 AND n.nspname = 'public';
 `
 
-    rows, err := db.Query(query, tableName)
-    if err != nil {
-        return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
-    }
-    defer rows.Close()
+	rows, err := db.Query(query, tableName)
+	if err != nil {
+		return "", fmt.Errorf("error querying sequences for table %s: %v", tableName, err)
+	}
+	defer rows.Close()
 
-    for rows.Next() {
-        var seqCreation, seqOwned, colDefault string
-        if err := rows.Scan(&seqCreation, &seqOwned, &colDefault); err != nil {
-            return "", fmt.Errorf("error scanning sequence information: %v", err)
-        }
+	for rows.Next() {
+		var seqCreation, seqOwned, colDefault string
+		if err := rows.Scan(&seqCreation, &seqOwned, &colDefault); err != nil {
+			return "", fmt.Errorf("error scanning sequence information: %v", err)
+		}
 
-        // Here we directly use the sequence creation script.
-        // The seqOwned might not be necessary if we're focusing on creation and default value setting.
-        sequencesSQL.WriteString(seqCreation + "\n" + colDefault + "\n")
-    }
+		// Here we directly use the sequence creation script.
+		// The seqOwned might not be necessary if we're focusing on creation and default value setting.
+		sequencesSQL.WriteString(seqCreation + "\n" + colDefault + "\n")
+	}
 
-    if err := rows.Err(); err != nil {
-        return "", fmt.Errorf("error iterating over sequences: %v", err)
-    }
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("error iterating over sequences: %v", err)
+	}
 
-    return sequencesSQL.String(), nil
+	return sequencesSQL.String(), nil
 }
 
 func scriptPrimaryKeys(db *sql.DB, tableName string) (string, error) {
