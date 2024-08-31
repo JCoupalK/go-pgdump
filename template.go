@@ -10,6 +10,7 @@ type DumpInfo struct {
 	DumpVersion   string
 	ServerVersion string
 	CompleteTime  string
+	ThreadsNumber int
 }
 
 func getServerVersion(db *sql.DB) string {
@@ -27,6 +28,8 @@ func writeHeader(file *os.File, info DumpInfo) error {
 --
 -- Server version:
 --	 {{ .ServerVersion }}
+-- Threads Used:
+--   {{ .ThreadsNumber }}
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;

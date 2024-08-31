@@ -14,10 +14,15 @@ import (
 
 type Dumper struct {
 	ConnectionString string
+	Parallels        int
 }
 
-func NewDumper(connectionString string) *Dumper {
-	return &Dumper{ConnectionString: connectionString}
+func NewDumper(connectionString string, threads int) *Dumper {
+	// set a default value for Parallels if it is zero or less
+	if threads <= 0 {
+		threads = 50
+	}
+	return &Dumper{ConnectionString: connectionString, Parallels: threads}
 }
 
 func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
@@ -35,9 +40,10 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 
 	// Template variables
 	info := DumpInfo{
-		DumpVersion:   "0.1.1",
+		DumpVersion:   "0.2.1",
 		ServerVersion: getServerVersion(db),
 		CompleteTime:  time.Now().Format("2006-01-02 15:04:05 -0700 MST"),
+		ThreadsNumber: d.Parallels,
 	}
 
 	if err := writeHeader(file, info); err != nil {
@@ -54,7 +60,7 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 		mx sync.Mutex
 	)
 
-	chunks := slices.Chunk(tables, 100)
+	chunks := slices.Chunk(tables, d.Parallels)
 	for chunk := range chunks {
 		wg.Add(len(chunk))
 		for _, table := range chunk {
