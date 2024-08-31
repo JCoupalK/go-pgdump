@@ -12,55 +12,55 @@ Doesn't feature all of pg_dump features just yet (mainly around sequences) so it
 package main
 
 import (
-	"flag"
-	"fmt"
-	"os"
-	"path/filepath"
-	"time"
+ "flag"
+ "fmt"
+ "os"
+ "path/filepath"
+ "time"
 
-	"github.com/JCoupalK/go-pgdump"
+ "github.com/JCoupalK/go-pgdump"
 )
 
 // If no schema is defined it defaults to "public"
 var (
-	outputDIR = flag.String("o", "", "Path to output directory")
-	suffix    = flag.String("sx", "", "Suffix of table names for dump")
-	prefix    = flag.String("px", "", "Prefix of table names for dump")
-	schema    = flag.String("s", "", "Schema filter for dump")
+ outputDIR = flag.String("o", "", "Path to output directory")
+ suffix    = flag.String("sx", "", "Suffix of table names for dump")
+ prefix    = flag.String("px", "", "Prefix of table names for dump")
+ schema    = flag.String("s", "", "Schema filter for dump")
 )
 
 func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, port int) {
-	// PostgreSQL connection string
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		hostname, port, username, password, dbname)
+ // PostgreSQL connection string
+ psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+  hostname, port, username, password, dbname)
 
-	currentTime := time.Now()
-	dumpFilename := filepath.Join(outputDir, fmt.Sprintf("%s-%s.sql", dbname, currentTime.Format("20060102T150405")))
+ currentTime := time.Now()
+ dumpFilename := filepath.Join(outputDir, fmt.Sprintf("%s-%s.sql", dbname, currentTime.Format("20060102T150405")))
 
-	// Create a new dumper instance
-	dumper := pgdump.NewDumper(psqlInfo)
+  // Create a new dumper instance with connection string and number of threads
+ dumper := pgdump.NewDumper(psqlInfo, 100)
 
-	if err := dumper.DumpDatabase(dumpFilename, &pgdump.TableOptions{
-		TableSuffix: *suffix,
-		TablePrefix: *prefix,
-		Schema:      *schema,
-	}); err != nil {
-		log.Fatal(err)
-	}
+ if err := dumper.DumpDatabase(dumpFilename, &pgdump.TableOptions{
+  TableSuffix: *suffix,
+  TablePrefix: *prefix,
+  Schema:      *schema,
+ }); err != nil {
+  log.Fatal(err)
+ }
 
-	fmt.Println("Backup successfully saved to", dumpFilename)
+ fmt.Println("Backup successfully saved to", dumpFilename)
 }
 
 func main(){
-	flag.Parse()
-	username := "user"
-	password := "example"
-	hostname := "examplehost"
-	db := "dbname"
-	outputDir := *outputDIR
-	port := 5432
+ flag.Parse()
+ username := "user"
+ password := "example"
+ hostname := "examplehost"
+ db := "dbname"
+ outputDir := *outputDIR
+ port := 5432
 
-	BackupPostgreSQL(username, password, hostname, db, outputDir, port)
+ BackupPostgreSQL(username, password, hostname, db, outputDir, port)
 }
 ```
 
