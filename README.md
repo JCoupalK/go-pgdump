@@ -6,7 +6,7 @@ Inspired by [go-mysqldump](https://github.com/jamf/go-mysqldump) which does that
 
 Doesn't feature all of pg_dump features just yet (mainly around sequences) so it is still a work in progress.
 
-## Simple example using the library
+## Simple example for a CLI tool using the library
 
 ```go
 package main
@@ -21,11 +21,12 @@ import (
 	"github.com/JCoupalK/go-pgdump"
 )
 
+// If no schema is defined it defaults to "public"
 var (
-	outputDIR = flag.String("o", "", "path to output directory")
-	suffix    = flag.String("sx", "", "suffix of tablen names for dump")
-	prefix    = flag.String("px", "", "prefix of tablen names for dump")
-	schema    = flag.String("s", "", "schema filter for dump")
+	outputDIR = flag.String("o", "", "Path to output directory")
+	suffix    = flag.String("sx", "", "Suffix of table names for dump")
+	prefix    = flag.String("px", "", "Prefix of table names for dump")
+	schema    = flag.String("s", "", "Schema filter for dump")
 )
 
 func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, port int) {
@@ -61,4 +62,10 @@ func main(){
 
 	BackupPostgreSQL(username, password, hostname, db, outputDir, port)
 }
+```
+
+## Usage of the example
+
+```bash
+./go-pgdump-test -o test -sx example -px test -s myschema
 ```
