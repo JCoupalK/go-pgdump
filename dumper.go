@@ -14,10 +14,11 @@ import (
 
 type Dumper struct {
 	ConnectionString string
+	parallels        int
 }
 
-func NewDumper(connectionString string) *Dumper {
-	return &Dumper{ConnectionString: connectionString}
+func NewDumper(connectionString string, threads int) *Dumper {
+	return &Dumper{ConnectionString: connectionString, parallels: threads}
 }
 
 func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
@@ -54,7 +55,7 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 		mx sync.Mutex
 	)
 
-	chunks := slices.Chunk(tables, 100)
+	chunks := slices.Chunk(tables, d.parallels)
 	for chunk := range chunks {
 		wg.Add(len(chunk))
 		for _, table := range chunk {
