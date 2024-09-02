@@ -68,6 +68,7 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 	for chunk := range chunks {
 		wg.Add(len(chunk))
 		for _, table := range chunk {
+			//we can add the switch here for export and add a go func here.
 			go func(table string) {
 				defer wg.Done()
 				str, err := scriptTable(db, table)
