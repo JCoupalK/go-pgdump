@@ -113,3 +113,34 @@ func getTableDataCopyFormat(db *sql.DB, tableName string) (string, error) {
 
 	return output.String(), nil
 }
+
+func getTableDataAsCSV(db *sql.DB, tableName string) ([][]string, error) {
+	query := fmt.Sprintf("SELECT * FROM %s", tableName)
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	values := make([]sql.RawBytes, len(columns))
+	scanArgs := make([]interface{}, len(values))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+	var output [][]string
+	for rows.Next() {
+		if err := rows.Scan(scanArgs...); err != nil {
+			return nil, err
+		}
+		var valueStrings []string
+		for _, value := range values {
+			valueStrings = append(valueStrings, string(value))
+		}
+		output = append(output, valueStrings)
+	}
+	return output, nil
+}

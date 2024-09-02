@@ -1,15 +1,19 @@
 package pgdump
 
 import (
+	"context"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	_ "github.com/lib/pq"
+	"golang.org/x/sync/errgroup"
 )
 
 type Dumper struct {
@@ -82,6 +86,38 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 	}
 
 	return nil
+}
+
+func (d *Dumper) DumpToCSV(db *sql.DB, outputDIR string, tablename ...string) ([]string, error) {
+	chunks := slices.Chunk(tablename, d.Parallels)
+	var (
+		paths []string
+	)
+	g, _ := errgroup.WithContext(context.Background())
+	for chunk := range chunks {
+		g.SetLimit(len(chunk))
+		for _, table := range chunk {
+			g.Go(func() error {
+				records, err := getTableDataAsCSV(db, table)
+				if err != nil {
+					return err
+				}
+				f, err := os.Open(path.Join(outputDIR, table+".csv"))
+				if err != nil {
+					return err
+				}
+				csvWriter := csv.NewWriter(f)
+				csvWriter.WriteAll(records)
+				csvWriter.Flush()
+				paths = append(paths, path.Join(outputDIR, table+".csv"))
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
+	}
+	return nil, nil
 }
 
 func scriptTable(db *sql.DB, tableName string) (string, error) {
