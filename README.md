@@ -4,9 +4,9 @@
 
 # go-pgdump - Go PostgreSQL Dump
 
-![License](https://img.shields.io/github/license/JCoupalK/go-pgdump)
-![GitHub issues](https://img.shields.io/github/issues-raw/JCoupalK/go-pgdump)
-![GitHub go.mod Go version (branch & subdirectory of monorepo)](https://img.shields.io/github/go-mod/go-version/JCoupalK/go-pgdump/main)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues-raw/JCoupalK/go-pgdump)](https://github.com/JCoupalK/go-pgdump/issues)
+[![GitHub go.mod Go version (branch & subdirectory of monorepo)](https://img.shields.io/github/go-mod/go-version/JCoupalK/go-pgdump/main)](./go.mod)
 
 Create PostgreSQL or CSV dumps in Go without the pg_dump CLI as a dependancy.
 
