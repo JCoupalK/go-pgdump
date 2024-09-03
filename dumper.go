@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 	"slices"
@@ -19,14 +21,51 @@ import (
 type Dumper struct {
 	ConnectionString string
 	Parallels        int
+	DumpVersion      string
 }
 
 func NewDumper(connectionString string, threads int) *Dumper {
+	// fetch the DumpVersion from the GitHub repository
+	dumpVersion, err := fetchDumpVersion("JCoupalK", "go-pgdump")
+	if err != nil {
+		dumpVersion = "unknown"
+	}
+
 	// set a default value for Parallels if it is zero or less
 	if threads <= 0 {
 		threads = 50
 	}
-	return &Dumper{ConnectionString: connectionString, Parallels: threads}
+	return &Dumper{ConnectionString: connectionString, Parallels: threads, DumpVersion: dumpVersion}
+}
+
+func fetchDumpVersion(owner, repo string) (string, error) {
+	// GitHub API URL to get the latest tags
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/tags", owner, repo)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to fetch tags: status code %d", resp.StatusCode)
+	}
+
+	var tags []struct {
+		Name string `json:"name"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return "", err
+	}
+
+	if len(tags) == 0 {
+		return "", fmt.Errorf("no tags found in repository")
+	}
+
+	// Return the latest tag
+	return tags[0].Name, nil
 }
 
 func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
@@ -44,7 +83,7 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 
 	// Template variables
 	info := DumpInfo{
-		DumpVersion:   "0.2.1",
+		DumpVersion:   d.DumpVersion,
 		ServerVersion: getServerVersion(db),
 		CompleteTime:  time.Now().Format("2006-01-02 15:04:05 -0700 MST"),
 		ThreadsNumber: d.Parallels,
