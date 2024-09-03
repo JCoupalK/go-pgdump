@@ -89,7 +89,13 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 	return nil
 }
 
-func (d *Dumper) DumpToCSV(db *sql.DB, outputDIR string, tablename ...string) ([]string, error) {
+func (d *Dumper) DumpToCSV(outputDIR string, tablename ...string) ([]string, error) {
+	db, err := sql.Open("postgres", d.ConnectionString)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
 	chunks := slices.Chunk(tablename, d.Parallels)
 	var (
 		paths []string
@@ -98,18 +104,26 @@ func (d *Dumper) DumpToCSV(db *sql.DB, outputDIR string, tablename ...string) ([
 	for chunk := range chunks {
 		g.SetLimit(len(chunk))
 		for _, table := range chunk {
+			table := table // capture the current value of table for use in goroutine
 			g.Go(func() error {
 				records, err := getTableDataAsCSV(db, table)
 				if err != nil {
 					return err
 				}
-				f, err := os.Open(path.Join(outputDIR, table+".csv"))
+
+				// Correctly open (or create) the file for writing
+				f, err := os.Create(path.Join(outputDIR, table+".csv"))
 				if err != nil {
 					return err
 				}
+				defer f.Close()
+
 				csvWriter := csv.NewWriter(f)
-				csvWriter.WriteAll(records)
+				if err := csvWriter.WriteAll(records); err != nil {
+					return err
+				}
 				csvWriter.Flush()
+
 				paths = append(paths, path.Join(outputDIR, table+".csv"))
 				return nil
 			})
@@ -118,7 +132,7 @@ func (d *Dumper) DumpToCSV(db *sql.DB, outputDIR string, tablename ...string) ([
 			return nil, err
 		}
 	}
-	return nil, nil
+	return paths, nil
 }
 
 func scriptTable(db *sql.DB, tableName string) (string, error) {

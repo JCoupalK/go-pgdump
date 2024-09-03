@@ -126,21 +126,29 @@ func getTableDataAsCSV(db *sql.DB, tableName string) ([][]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	output := [][]string{columns}
+
 	values := make([]sql.RawBytes, len(columns))
 	scanArgs := make([]interface{}, len(values))
 	for i := range values {
 		scanArgs[i] = &values[i]
 	}
-	var output [][]string
+
 	for rows.Next() {
 		if err := rows.Scan(scanArgs...); err != nil {
 			return nil, err
 		}
 		var valueStrings []string
 		for _, value := range values {
-			valueStrings = append(valueStrings, string(value))
+			if value == nil {
+				valueStrings = append(valueStrings, "NULL")
+			} else {
+				valueStrings = append(valueStrings, string(value))
+			}
 		}
 		output = append(output, valueStrings)
 	}
+
 	return output, nil
 }
