@@ -38,7 +38,7 @@ var (
  port      = flag.Int("P", 5432, "port number for PostgreSQL")
  dumpCSV   = flag.Bool("csv", false, "dump to CSV")
  csvTables = flag.String("tables", "", "comma-separated list of table names to dump to CSV")
- outputDIR = flag.String("o", "", "path to output directory")
+ outputDir = flag.String("o", "", "path to output directory")
  suffix    = flag.String("sx", "", "suffix of table names for dump")
  prefix    = flag.String("px", "", "prefix of table names for dump")
  schema    = flag.String("s", "", "schema filter for dump")
@@ -81,8 +81,7 @@ func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, po
 }
 
 func main() {
- flag.Parse()
-
+ flag.Parse()
  BackupPostgreSQL(*username, *password, *hostname, *db, *outputDir, *port)
 }
 ```
