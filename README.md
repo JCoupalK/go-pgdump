@@ -84,21 +84,23 @@ func main() {
 }
 ```
 
-### Usage of the example for a database dump
+### Usage for a database dump
 
 ```bash
-./go-pgdump-test -o test -sx example -px test -s myschema
+./go-pgdump-cli -o test -sx example -px test -s myschema
 ```
 
-### Usage of the example for a CSV dump
+### Usage for a CSV dump
 
 ```bash
-./go-pgdump-test -o test -csv -tables employees,departments
+./go-pgdump-cli -o test -csv -tables employees,departments
 ```
+
+See more about the CLI tool [here](https://github.com/JCoupalK/go-pgdump-cli).
 
 ## Contributing
 
-Contributions to Mail2Go are welcome. Please fork the repository and submit a pull request with your changes or improvements.
+Contributions are welcome. Please fork the repository and submit a pull request with your changes or improvements.
 
 ## License
 
