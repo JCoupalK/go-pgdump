@@ -1,3 +1,7 @@
+<p align="center">
+ <img src="https://github.com/user-attachments/assets/3cc74b3c-4ed1-4dee-a484-1f125560790b"
+</p>
+
 # go-pgdump - Go PostgreSQL Dump
 
 ![License](https://img.shields.io/github/license/JCoupalK/go-pgdump)
