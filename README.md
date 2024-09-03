@@ -27,11 +27,16 @@ import (
 )
 
 var (
+ username  = flag.String("u", "", "username for PostgreSQL")
+ password  = flag.String("p", "", "password for PostgreSQL")
+ hostname  = flag.String("h", "", "hostname for PostgreSQL")
+ db        = flag.String("d", "", "database name for PostgreSQL")
+ port      = flag.Int("P", 5432, "port number for PostgreSQL")
  dumpCSV   = flag.Bool("csv", false, "dump to CSV")
  csvTables = flag.String("tables", "", "comma-separated list of table names to dump to CSV")
  outputDIR = flag.String("o", "", "path to output directory")
- suffix    = flag.String("sx", "", "suffix of tablen names for dump")
- prefix    = flag.String("px", "", "prefix of tablen names for dump")
+ suffix    = flag.String("sx", "", "suffix of table names for dump")
+ prefix    = flag.String("px", "", "prefix of table names for dump")
  schema    = flag.String("s", "", "schema filter for dump")
 )
 
@@ -73,27 +78,22 @@ func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, po
 
 func main() {
  flag.Parse()
- username := "user"
- password := "example"
- hostname := "localhost"
- db := "test"
  outputDir := *outputDIR
- port := 5432
 
- BackupPostgreSQL(username, password, hostname, db, outputDir, port)
+ BackupPostgreSQL(*username, *password, *hostname, *db, outputDir, *port)
 }
 ```
 
-### Usage for a database dump
+### Usage for a database dump with default port
 
 ```bash
-./go-pgdump-cli -o test -sx example -px test -s myschema
+./go-pgdump-cli -u user -p example -h localhost -d test -o test -sx example -px test -s myschema
 ```
 
-### Usage for a CSV dump
+### Usage for a CSV dump with custom port
 
 ```bash
-./go-pgdump-cli -o test -csv -tables employees,departments
+./go-pgdump-cli -u user -p example -h localhost -d test -P 5433 -o test -csv -tables employees,departments
 ```
 
 See more about the CLI tool [here](https://github.com/JCoupalK/go-pgdump-cli).
