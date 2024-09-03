@@ -82,9 +82,8 @@ func BackupPostgreSQL(username, password, hostname, dbname, outputDir string, po
 
 func main() {
  flag.Parse()
- outputDir := *outputDIR
 
- BackupPostgreSQL(*username, *password, *hostname, *db, outputDir, *port)
+ BackupPostgreSQL(*username, *password, *hostname, *db, *outputDir, *port)
 }
 ```
 
