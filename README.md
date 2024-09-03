@@ -1,4 +1,4 @@
-# GoPGDump - Go PostgreSQL Dump
+# go-pgdump - Go PostgreSQL Dump
 
 ![License](https://img.shields.io/github/license/JCoupalK/go-pgdump)
 ![GitHub issues](https://img.shields.io/github/issues-raw/JCoupalK/go-pgdump)
