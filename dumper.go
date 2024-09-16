@@ -135,7 +135,7 @@ func (d *Dumper) DumpDBToCSV(outputDIR, outputFile string, opts *TableOptions) e
 	}
 	defer db.Close()
 
-	file, err := os.Create(outputFile)
+	file, err := os.Create(path.Join(outputDIR, outputFile))
 	if err != nil {
 		return err
 	}
