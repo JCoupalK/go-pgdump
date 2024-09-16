@@ -24,7 +24,7 @@ func getServerVersion(db *sql.DB) string {
 }
 
 func writeHeader(file *os.File, info DumpInfo) error {
-	const headerTemplate = `-- Go PostgreSQL Dump {{ .DumpVersion }}
+	const headerTemplate = `-- Go PostgreSQL Dump v{{ .DumpVersion }}
 --
 -- Server version:
 --	 {{ .ServerVersion }}
