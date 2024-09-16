@@ -128,17 +128,41 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 	return nil
 }
 
-func (d *Dumper) DumpToCSV(outputDIR string, tablename ...string) ([]string, error) {
+func (d *Dumper) DumpDBToCSV(outputDIR, outputFile string, opts *TableOptions) error {
 	db, err := sql.Open("postgres", d.ConnectionString)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer db.Close()
 
+	file, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Template variables
+	info := DumpInfo{
+		DumpVersion:   d.DumpVersion,
+		ServerVersion: getServerVersion(db),
+		CompleteTime:  time.Now().Format("2006-01-02 15:04:05 -0700 MST"),
+		ThreadsNumber: d.Parallels,
+	}
+
+	if err := writeHeader(file, info); err != nil {
+		return err
+	}
+
+	if err := writeFooter(file, info); err != nil {
+		return err
+	}
+
+	tablename, err := getTables(db, opts)
+	if err != nil {
+		return err
+	}
+
 	chunks := slices.Chunk(tablename, d.Parallels)
-	var (
-		paths []string
-	)
 	g, _ := errgroup.WithContext(context.Background())
 	for chunk := range chunks {
 		g.SetLimit(len(chunk))
@@ -162,16 +186,14 @@ func (d *Dumper) DumpToCSV(outputDIR string, tablename ...string) ([]string, err
 					return err
 				}
 				csvWriter.Flush()
-
-				paths = append(paths, path.Join(outputDIR, table+".csv"))
 				return nil
 			})
 		}
 		if err := g.Wait(); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return paths, nil
+	return nil
 }
 
 func scriptTable(db *sql.DB, tableName string) (string, error) {
