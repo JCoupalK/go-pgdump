@@ -7,7 +7,11 @@ require (
 	golang.org/x/sync v0.8.0
 )
 
+// Retract old unstable versions
 retract (
-	[v0.1.0, v0.2.0] // Versions to be retracted
-	[v0.0.0, v0.0.9]
+	// v0.1.0-v0.1.9 contains critical bugs and should not be used
+	[v0.1.0, v0.1.9]
+
+	// v0.2.0 contains breaking changes
+	v0.2.0
 )
