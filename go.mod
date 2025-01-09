@@ -9,6 +9,7 @@ require (
 
 // Retract old unstable versions
 retract (
-	v0.2.0 // Contains incomplete implementation
-	[v0.1.0, v0.1.9] // Published with critical bugs, use v1.0.0 or later instead
+	[v0.1.0, v0.1.9]
+	[v0.2.0, v0.2.9]
+	[v1.0.0, v1.0.9]
 )
