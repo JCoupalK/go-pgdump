@@ -7,9 +7,8 @@ require (
 	golang.org/x/sync v0.8.0
 )
 
-retract v0.1.2
-retract [v0.1.2, v1.0.3]
 retract (
-    v0.1.2
     [v0.1.2, v1.0.3]
+    
+    v0.1.2
 )
