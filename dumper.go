@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"slices"
@@ -33,18 +34,12 @@ func NewDumper(connectionString string, threads int) *Dumper {
 	return &Dumper{ConnectionString: connectionString, Parallels: threads, DumpVersion: dumpVersion}
 }
 
-func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
+func (d *Dumper) DumpDatabaseToWriter(writer io.Writer, opts *TableOptions) error {
 	db, err := sql.Open("postgres", d.ConnectionString)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-
-	file, err := os.Create(outputFile)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
 
 	// Template variables
 	info := DumpInfo{
@@ -54,7 +49,7 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 		ThreadsNumber: d.Parallels,
 	}
 
-	if err := writeHeader(file, info); err != nil {
+	if err := writeHeader(writer, info); err != nil {
 		return err
 	}
 
@@ -80,17 +75,27 @@ func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
 					return
 				}
 				mx.Lock()
-				file.WriteString(str)
+				io.WriteString(writer, str)
 				mx.Unlock()
 			}(table)
 		}
 		wg.Wait()
 	}
-	if err := writeFooter(file, info); err != nil {
+	if err := writeFooter(writer, info); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (d *Dumper) DumpDatabase(outputFile string, opts *TableOptions) error {
+	file, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return d.DumpDatabaseToWriter(file, opts)
 }
 
 func (d *Dumper) DumpDBToCSV(outputDIR, outputFile string, opts *TableOptions) error {

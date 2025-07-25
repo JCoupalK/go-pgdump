@@ -2,7 +2,7 @@ package pgdump
 
 import (
 	"database/sql"
-	"os"
+	"io"
 	"text/template"
 )
 
@@ -23,7 +23,7 @@ func getServerVersion(db *sql.DB) string {
 	return version
 }
 
-func writeHeader(file *os.File, info DumpInfo) error {
+func writeHeader(file io.Writer, info DumpInfo) error {
 	const headerTemplate = `-- Go PostgreSQL Dump v{{ .DumpVersion }}
 --
 -- Server version:
@@ -53,7 +53,7 @@ SET default_table_access_method = heap;
 	return tmpl.Execute(file, info)
 }
 
-func writeFooter(file *os.File, info DumpInfo) error {
+func writeFooter(file io.Writer, info DumpInfo) error {
 	const footerTemplate = `--
 -- Dump completed on {{ .CompleteTime }}
 --`
