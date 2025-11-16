@@ -25,7 +25,7 @@ type Dumper struct {
 
 func NewDumper(connectionString string, threads int) *Dumper {
 	// Version number of go-pgdump, used in the template after a dump
-	dumpVersion := "0.2.1"
+	dumpVersion := "0.2.2"
 
 	// set a default value for Parallels if it is zero or less
 	if threads <= 0 {
@@ -270,8 +270,12 @@ AND nsp.nspname = 'public';
 		}
 
 		// Construct the ALTER TABLE statement to add the primary key constraint.
-		pksSQL.WriteString(fmt.Sprintf("ALTER TABLE public.%s ADD CONSTRAINT %s %s;\n",
-			tableName, constraintName, constraintDef))
+		pksSQL.WriteString(fmt.Sprintf(
+			"ALTER TABLE %s ADD CONSTRAINT %s %s;\n",
+			escapeReservedName(tableName),
+			constraintName,
+			constraintDef,
+		))
 	}
 
 	if err := rows.Err(); err != nil {

@@ -74,12 +74,16 @@ func getCreateTableStatement(db *sql.DB, tableName string) (string, error) {
 		columns = append(columns, columnDef)
 	}
 
-	return fmt.Sprintf("CREATE TABLE %s (\n    %s\n);", tableName, strings.Join(columns, ",\n    ")), nil
+	return fmt.Sprintf(
+		"CREATE TABLE %s (\n    %s\n);",
+		escapeReservedName(tableName),
+		strings.Join(columns, ",\n    "),
+	), nil
 }
 
 // generates the COPY command to import data for a table.
 func getTableDataCopyFormat(db *sql.DB, tableName string) (string, error) {
-	query := fmt.Sprintf("SELECT * FROM %s", tableName)
+	query := fmt.Sprintf("SELECT * FROM %s", escapeReservedName(tableName))
 	rows, err := db.Query(query)
 	if err != nil {
 		return "", err
@@ -97,7 +101,11 @@ func getTableDataCopyFormat(db *sql.DB, tableName string) (string, error) {
 	}
 
 	var output strings.Builder
-	output.WriteString(fmt.Sprintf("COPY %s (%s) FROM stdin;\n", tableName, strings.Join(columns, ", ")))
+	output.WriteString(fmt.Sprintf(
+		"COPY %s (%s) FROM stdin;\n",
+		escapeReservedName(tableName),
+		strings.Join(columns, ", "),
+	))
 	for rows.Next() {
 		err := rows.Scan(scanArgs...)
 		if err != nil {
@@ -115,7 +123,7 @@ func getTableDataCopyFormat(db *sql.DB, tableName string) (string, error) {
 }
 
 func getTableDataAsCSV(db *sql.DB, tableName string) ([][]string, error) {
-	query := fmt.Sprintf("SELECT * FROM %s", tableName)
+	query := fmt.Sprintf("SELECT * FROM %s", escapeReservedName(tableName))
 	rows, err := db.Query(query)
 	if err != nil {
 		return nil, err
