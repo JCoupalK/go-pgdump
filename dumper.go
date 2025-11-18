@@ -25,7 +25,7 @@ type Dumper struct {
 
 func NewDumper(connectionString string, threads int) *Dumper {
 	// Version number of go-pgdump, used in the template after a dump
-	dumpVersion := "0.2.2"
+	dumpVersion := "1.1.0"
 
 	// set a default value for Parallels if it is zero or less
 	if threads <= 0 {
